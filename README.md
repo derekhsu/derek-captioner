@@ -39,3 +39,12 @@ cargo test
 ## Notes
 - Initial commit pushed to `origin/master`.
 - Configure GitHub auth via `gh auth login` if needed for future PRs.
+
+## Release (macOS unsigned via GitHub Actions)
+- Create a tag `vX.Y.Z` on `master`/`main` and push:
+  ```bash
+  git tag v0.1.0
+  git push origin v0.1.0
+  ```
+- GitHub Actions workflow `.github/workflows/release.yml` will build the macOS app (unsigned) and publish a Release with `.dmg` / `.app.tar.gz` artifacts.
+- Unsigned binaries will trigger Gatekeeper warnings; users may need to right-click Open or allow in Security & Privacy.
