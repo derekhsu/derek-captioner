@@ -46,5 +46,6 @@ cargo test
   git tag v0.1.0
   git push origin v0.1.0
   ```
-- GitHub Actions workflow `.github/workflows/release.yml` will build the macOS app (unsigned) and publish a Release with `.dmg` / `.app.tar.gz` artifacts.
+- GitHub Actions workflow `.github/workflows/release.yml` will build the macOS app (unsigned) and publish a Release with a `.dmg` artifact.
+- Install the app from the released `.dmg`. Repackaging or extracting the `.app` separately can cause macOS validation failures.
 - Unsigned binaries will trigger Gatekeeper warnings; users may need to right-click Open or allow in Security & Privacy.
