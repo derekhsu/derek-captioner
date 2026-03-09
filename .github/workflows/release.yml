@@ -30,6 +30,12 @@ jobs:
         working-directory: desktop
         run: bun run tauri build
 
+      - name: Verify macOS app bundle
+        run: |
+          codesign -dv --verbose=4 desktop/src-tauri/target/release/bundle/macos/Captioner.app
+          codesign --verify --deep --strict --verbose=4 desktop/src-tauri/target/release/bundle/macos/Captioner.app
+          spctl -a -t exec -vv desktop/src-tauri/target/release/bundle/macos/Captioner.app || true
+
       - name: List bundle outputs
         run: |
           ls -la desktop/src-tauri/target/release/bundle || true
