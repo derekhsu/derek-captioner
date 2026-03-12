@@ -274,7 +274,7 @@ impl Default for AppSettings {
       }],
       last_opened_directory: String::new(),
       overwrite_mode: "skip".to_string(),
-      dry_run_count: 5,
+      dry_run_count: 0,
       theme: "system".to_string(),
     }
   }

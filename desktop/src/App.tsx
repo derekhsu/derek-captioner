@@ -8,16 +8,19 @@ import {
   Box,
   Button,
   Card,
+  Checkbox,
   Divider,
   Flex,
   Group,
   NumberInput,
   Paper,
   PasswordInput,
+  Progress,
   ScrollArea,
   Select,
   SimpleGrid,
   Stack,
+  Switch,
   Text,
   TextInput,
   Textarea,
@@ -84,7 +87,7 @@ const defaultSettings: AppSettings = {
   ],
   lastOpenedDirectory: '',
   overwriteMode: 'skip',
-  dryRunCount: 5,
+  dryRunCount: 0,
   theme: 'system',
 }
 
@@ -92,6 +95,7 @@ const defaultSystemPrompt =
   'You are a helpful image captioning assistant. Return only the final caption text without reasoning or explanation.'
 
 const defaultUserPrompt = 'Generate a concise caption for this image.'
+const defaultBatchLimit = 5
 
 type ImageViewMode = 'grid' | 'list'
 
@@ -99,6 +103,7 @@ function App() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
   const [images, setImages] = useState<ImageEntry[]>([])
   const [selectedImagePath, setSelectedImagePath] = useState<string>('')
+  const [selectedBatchImagePaths, setSelectedBatchImagePaths] = useState<string[]>([])
   const [captionText, setCaptionText] = useState('')
   const [savedCaptionText, setSavedCaptionText] = useState('')
   const [statusMessage, setStatusMessage] = useState('Loading settings...')
@@ -106,6 +111,7 @@ function App() {
   const [isBusy, setIsBusy] = useState(false)
   const [batchResults, setBatchResults] = useState<BatchResult[]>([])
   const [imageViewMode, setImageViewMode] = useState<ImageViewMode>('list')
+  const [batchLimitInput, setBatchLimitInput] = useState(defaultBatchLimit)
 
   const selectedImage = useMemo(
     () => images.find((entry) => entry.imagePath === selectedImagePath) ?? null,
@@ -121,6 +127,18 @@ function App() {
       pending: total - hasCaption,
     }
   }, [images])
+
+  const convertedPercent = useMemo(() => {
+    if (summary.total === 0) {
+      return 0
+    }
+
+    return Math.round((summary.hasCaption / summary.total) * 100)
+  }, [summary.hasCaption, summary.total])
+
+  const pendingPercent = summary.total === 0 ? 0 : 100 - convertedPercent
+
+  const selectedBatchCount = selectedBatchImagePaths.length
 
   const selectedPromptPreset = useMemo(
     () => settings.promptPresets.find((preset) => preset.id === settings.selectedPromptPresetId) ?? settings.promptPresets[0],
@@ -216,13 +234,23 @@ function App() {
   }
 
   async function handleGenerateBatch() {
+    const targetImages =
+      selectedBatchImagePaths.length > 0
+        ? images.filter((image) => selectedBatchImagePaths.includes(image.imagePath))
+        : images
+
     setIsBusy(true)
-    setStatusMessage('Generating captions in batch...')
+    setBatchResults([])
+    setStatusMessage(
+      selectedBatchImagePaths.length > 0
+        ? `Generating captions for ${targetImages.length} selected image(s)...`
+        : 'Generating captions for all loaded images...',
+    )
     setErrorMessage('')
 
     try {
       const results = await invoke<BatchResult[]>('generate_captions_batch', {
-        images,
+        images: targetImages,
         settings,
         systemPrompt: selectedPromptPreset?.systemPrompt ?? '',
         userPrompt: selectedPromptPreset?.userPrompt ?? '',
@@ -259,6 +287,12 @@ function App() {
   useEffect(() => {
     void initialize()
   }, [])
+
+  useEffect(() => {
+    if (settings.dryRunCount > 0) {
+      setBatchLimitInput(settings.dryRunCount)
+    }
+  }, [settings.dryRunCount])
 
   useEffect(() => {
     if (!selectedImage) {
@@ -331,6 +365,8 @@ function App() {
       const scanned = await invoke<ImageEntry[]>('scan_directory', { directoryPath })
       setImages(scanned)
       setSelectedImagePath(scanned[0]?.imagePath ?? '')
+      setSelectedBatchImagePaths([])
+      setBatchResults([])
       setStatusMessage(`Loaded ${scanned.length} image(s).`)
 
       if (persist) {
@@ -381,6 +417,29 @@ function App() {
       preset.id === settings.selectedPromptPresetId ? { ...preset, ...patch } : preset,
     )
     setSettings((current) => ({ ...current, promptPresets: nextPromptPresets }))
+  }
+
+  function toggleBatchImageSelection(imagePath: string) {
+    setSelectedBatchImagePaths((current) =>
+      current.includes(imagePath) ? current.filter((path) => path !== imagePath) : [...current, imagePath],
+    )
+  }
+
+  function selectAllBatchImages() {
+    setSelectedBatchImagePaths(images.map((image) => image.imagePath))
+  }
+
+  function clearBatchImageSelection() {
+    setSelectedBatchImagePaths([])
+  }
+
+  function handleBatchLimitToggle(enabled: boolean) {
+    if (enabled) {
+      void persistSettings({ ...settings, dryRunCount: Math.max(batchLimitInput, 1) })
+      return
+    }
+
+    void persistSettings({ ...settings, dryRunCount: 0 })
   }
 
   const hasUnsavedCaption = captionText !== savedCaptionText
@@ -438,6 +497,37 @@ function App() {
                 <Title order={2}>{summary.pending}</Title>
               </Paper>
             </SimpleGrid>
+
+            <Paper withBorder p="md" className="panel-surface progress-card">
+              <Stack gap="sm">
+                <Group justify="space-between" align="center">
+                  <Text size="sm" fw={600}>
+                    Conversion Progress
+                  </Text>
+                  <Text size="sm" c="dimmed">
+                    {summary.hasCaption} / {summary.total || 0}
+                  </Text>
+                </Group>
+
+                <Progress.Root size="xl" radius="xl" className="conversion-progress">
+                  <Progress.Section value={convertedPercent} color="teal">
+                    {convertedPercent > 12 ? <Progress.Label>{convertedPercent}% converted</Progress.Label> : null}
+                  </Progress.Section>
+                  <Progress.Section value={pendingPercent} color="yellow">
+                    {pendingPercent > 12 ? <Progress.Label>{pendingPercent}% pending</Progress.Label> : null}
+                  </Progress.Section>
+                </Progress.Root>
+
+                <Group justify="space-between" align="center" className="progress-legend">
+                  <Text size="sm" c="teal.3">
+                    Converted: {summary.hasCaption}
+                  </Text>
+                  <Text size="sm" c="yellow.3">
+                    Pending: {summary.pending}
+                  </Text>
+                </Group>
+              </Stack>
+            </Paper>
           </SimpleGrid>
 
           <Group gap="sm">
@@ -445,7 +535,7 @@ function App() {
               Generate Selected
             </Button>
             <Button onClick={() => void handleGenerateBatch()} disabled={isBusy || images.length === 0} variant="default">
-              Generate Batch
+              {selectedBatchCount > 0 ? `Generate Batch (${selectedBatchCount} selected)` : 'Generate Batch (all)'}
             </Button>
           </Group>
 
@@ -507,13 +597,36 @@ function App() {
                           }
                           onBlur={() => updateSetting('requestTimeoutSeconds', settings.requestTimeoutSeconds)}
                         />
-                        <NumberInput
-                          label="Dry run"
-                          min={1}
-                          value={settings.dryRunCount}
-                          onChange={(value) => setSettings((current) => ({ ...current, dryRunCount: Number(value) || 1 }))}
-                          onBlur={() => updateSetting('dryRunCount', settings.dryRunCount)}
-                        />
+                        <Stack gap={6}>
+                          <Switch
+                            label="Limit batch size"
+                            checked={settings.dryRunCount > 0}
+                            onChange={(event) => handleBatchLimitToggle(event.currentTarget.checked)}
+                          />
+                          <NumberInput
+                            label="Batch limit"
+                            min={1}
+                            disabled={settings.dryRunCount === 0}
+                            value={batchLimitInput}
+                            onChange={(value) => {
+                              const nextValue = Math.max(Number(value) || 1, 1)
+                              setBatchLimitInput(nextValue)
+                              if (settings.dryRunCount > 0) {
+                                setSettings((current) => ({ ...current, dryRunCount: nextValue }))
+                              }
+                            }}
+                            onBlur={() => {
+                              if (settings.dryRunCount > 0) {
+                                updateSetting('dryRunCount', Math.max(batchLimitInput, 1))
+                              }
+                            }}
+                          />
+                          <Text size="xs" c="dimmed">
+                            {settings.dryRunCount > 0
+                              ? 'Batch generation stops after this many images.'
+                              : 'Batch generation runs on all images by default.'}
+                          </Text>
+                        </Stack>
                       </SimpleGrid>
 
                       <Select
@@ -591,26 +704,46 @@ function App() {
                       <Text size="xs" c="dimmed" maw={180} style={{ wordBreak: 'break-word' }}>
                         {settings.lastOpenedDirectory || 'No folder selected'}
                       </Text>
+                      <Text size="xs" c="dimmed">
+                        {selectedBatchCount > 0
+                          ? `Batch target: ${selectedBatchCount} selected image(s)`
+                          : 'Batch target: all loaded images'}
+                      </Text>
                     </Stack>
 
-                    <Group gap={6} wrap="nowrap">
-                      <Button
-                        size="xs"
-                        variant={imageViewMode === 'list' ? 'filled' : 'default'}
-                        color="cyan"
-                        onClick={() => setImageViewMode('list')}
-                      >
-                        List
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant={imageViewMode === 'grid' ? 'filled' : 'default'}
-                        color="cyan"
-                        onClick={() => setImageViewMode('grid')}
-                      >
-                        Grid
-                      </Button>
-                    </Group>
+                    <Stack gap={6} align="flex-end">
+                      <Group gap={6} wrap="nowrap">
+                        <Button
+                          size="xs"
+                          variant={imageViewMode === 'list' ? 'filled' : 'default'}
+                          color="cyan"
+                          onClick={() => setImageViewMode('list')}
+                        >
+                          List
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant={imageViewMode === 'grid' ? 'filled' : 'default'}
+                          color="cyan"
+                          onClick={() => setImageViewMode('grid')}
+                        >
+                          Grid
+                        </Button>
+                      </Group>
+                      <Group gap={6} wrap="nowrap">
+                        <Button
+                          size="xs"
+                          variant="default"
+                          onClick={selectAllBatchImages}
+                          disabled={images.length === 0 || selectedBatchCount === images.length}
+                        >
+                          Select All
+                        </Button>
+                        <Button size="xs" variant="default" onClick={clearBatchImageSelection} disabled={selectedBatchCount === 0}>
+                          Clear
+                        </Button>
+                      </Group>
+                    </Stack>
                   </Group>
 
                   <ScrollArea type="auto" offsetScrollbars className="panel-scroll-area image-list-scroll-area">
@@ -619,6 +752,7 @@ function App() {
                         {images.length === 0 ? <Text c="dimmed">No images loaded yet.</Text> : null}
                         {images.map((image) => {
                           const isSelected = selectedImagePath === image.imagePath
+                          const isBatchSelected = selectedBatchImagePaths.includes(image.imagePath)
                           return (
                             <UnstyledButton
                               key={image.imagePath}
@@ -634,9 +768,16 @@ function App() {
                                   />
                                 </Box>
                                 <Stack gap={4} className="image-grid-copy">
-                                  <Text fw={600} size="sm" lineClamp={2}>
-                                    {image.fileName}
-                                  </Text>
+                                  <Group justify="space-between" gap={6} wrap="nowrap" align="flex-start">
+                                    <Text fw={600} size="sm" lineClamp={2}>
+                                      {image.fileName}
+                                    </Text>
+                                    <Checkbox
+                                      checked={isBatchSelected}
+                                      onChange={() => toggleBatchImageSelection(image.imagePath)}
+                                      onClick={(event) => event.stopPropagation()}
+                                    />
+                                  </Group>
                                   <Group justify="space-between" gap={6} wrap="nowrap" align="center">
                                     <Text size="xs" c="dimmed" truncate>
                                       {image.relativePath}
@@ -656,6 +797,7 @@ function App() {
                         {images.length === 0 ? <Text c="dimmed">No images loaded yet.</Text> : null}
                         {images.map((image) => {
                           const isSelected = selectedImagePath === image.imagePath
+                          const isBatchSelected = selectedBatchImagePaths.includes(image.imagePath)
                           return (
                             <UnstyledButton
                               key={image.imagePath}
@@ -664,6 +806,11 @@ function App() {
                             >
                               <Group justify="space-between" align="center" wrap="nowrap">
                                 <Group gap="sm" wrap="nowrap" className="image-row-main">
+                                  <Checkbox
+                                    checked={isBatchSelected}
+                                    onChange={() => toggleBatchImageSelection(image.imagePath)}
+                                    onClick={(event) => event.stopPropagation()}
+                                  />
                                   <Box className="image-thumb-frame image-list-thumb-frame">
                                     <img
                                       src={convertFileSrc(image.imagePath)}

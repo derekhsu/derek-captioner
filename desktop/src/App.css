@@ -25,10 +25,23 @@
 .panel-surface,
 .sub-panel-surface,
 .summary-card,
+.progress-card,
 .batch-result-card {
   background: rgba(8, 15, 26, 0.78);
   border-color: rgba(103, 232, 249, 0.12);
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2);
+}
+
+.progress-card {
+  grid-column: 1 / -1;
+}
+
+.conversion-progress {
+  overflow: hidden;
+}
+
+.progress-legend {
+  gap: 12px;
 }
 
 .workspace-shell {
