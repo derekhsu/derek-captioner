@@ -73,6 +73,15 @@ fn should_generate_caption(entry: &ImageEntry, overwrite_mode: &str) -> Result<b
   }
 }
 
+fn caption_has_content(caption_path: &Path) -> Result<bool, BackendError> {
+  if !caption_path.exists() {
+    return Ok(false);
+  }
+
+  let content = fs::read_to_string(caption_path)?;
+  Ok(!content.trim().is_empty())
+}
+
 fn describe_reqwest_error(error: &reqwest::Error) -> String {
   let category = if error.is_timeout() {
     "timeout"
@@ -504,7 +513,7 @@ fn scan_images(root: &Path) -> Result<Vec<ImageEntry>, BackendError> {
         .unwrap_or_default()
         .to_string(),
       relative_path,
-      has_caption: caption_path.exists(),
+      has_caption: caption_has_content(&caption_path)?,
     });
   }
 
@@ -620,5 +629,19 @@ mod tests {
     assert_eq!(result[1].relative_path, "nested/b.PNG");
     assert!(result[1].has_caption);
     assert!(result[1].caption_path.ends_with("nested/b.txt"));
+  }
+
+  #[test]
+  fn scan_directory_treats_empty_caption_as_missing() {
+    let dir = tempdir().unwrap();
+    let image = dir.path().join("sample.png");
+    let caption = dir.path().join("sample.txt");
+
+    fs::write(&image, b"not-an-image").unwrap();
+    fs::write(&caption, "   \n").unwrap();
+
+    let result = scan_images(dir.path()).unwrap();
+    assert_eq!(result.len(), 1);
+    assert!(!result[0].has_caption);
   }
 }

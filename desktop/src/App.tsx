@@ -102,6 +102,7 @@ type ImageViewMode = 'grid' | 'list'
 function App() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
   const [images, setImages] = useState<ImageEntry[]>([])
+  const [loadedDirectoryPath, setLoadedDirectoryPath] = useState('')
   const [selectedImagePath, setSelectedImagePath] = useState<string>('')
   const [selectedBatchImagePaths, setSelectedBatchImagePaths] = useState<string[]>([])
   const [captionText, setCaptionText] = useState('')
@@ -219,11 +220,7 @@ function App() {
         captionPath: selectedImage.captionPath,
         content: caption,
       })
-      setImages((current) =>
-        current.map((image) =>
-          image.imagePath === selectedImage.imagePath ? { ...image, hasCaption: caption.trim().length > 0 } : image,
-        ),
-      )
+      await refreshLoadedImages()
       setStatusMessage('Caption generated and saved.')
     } catch (error) {
       setErrorMessage(String(error))
@@ -256,15 +253,7 @@ function App() {
         userPrompt: selectedPromptPreset?.userPrompt ?? '',
       })
       setBatchResults(results)
-      setImages((current) =>
-        current.map((image) => {
-          const result = results.find((item) => item.imagePath === image.imagePath)
-          if (!result) {
-            return image
-          }
-          return { ...image, hasCaption: result.status === 'success' || image.hasCaption }
-        }),
-      )
+      await refreshLoadedImages()
       if (selectedImage) {
         const selectedResult = results.find((item) => item.imagePath === selectedImage.imagePath)
         if (selectedResult?.status === 'success') {
@@ -342,6 +331,21 @@ function App() {
     }
   }
 
+  async function refreshLoadedImages() {
+    if (!loadedDirectoryPath) {
+      return
+    }
+
+    const scanned = await invoke<ImageEntry[]>('scan_directory', { directoryPath: loadedDirectoryPath })
+    setImages(scanned)
+    setSelectedImagePath((current) =>
+      scanned.some((image) => image.imagePath === current) ? current : scanned[0]?.imagePath ?? '',
+    )
+    setSelectedBatchImagePaths((current) =>
+      current.filter((path) => scanned.some((image) => image.imagePath === path)),
+    )
+  }
+
   async function handleSelectDirectory() {
     const selected = await open({
       directory: true,
@@ -363,6 +367,7 @@ function App() {
 
     try {
       const scanned = await invoke<ImageEntry[]>('scan_directory', { directoryPath })
+      setLoadedDirectoryPath(directoryPath)
       setImages(scanned)
       setSelectedImagePath(scanned[0]?.imagePath ?? '')
       setSelectedBatchImagePaths([])
@@ -393,11 +398,7 @@ function App() {
         content: captionText,
       })
       setSavedCaptionText(captionText)
-      setImages((current) =>
-        current.map((image) =>
-          image.imagePath === selectedImage.imagePath ? { ...image, hasCaption: captionText.trim().length > 0 } : image,
-        ),
-      )
+      await refreshLoadedImages()
       setStatusMessage('Caption saved.')
       setErrorMessage('')
     } catch (error) {
